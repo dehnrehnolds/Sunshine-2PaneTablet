@@ -17,7 +17,6 @@ package com.example.android.sunshine.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;
-import java.util.Calendar;
 import android.preference.PreferenceManager;
 import android.text.format.Time;
 
@@ -46,13 +45,14 @@ public class Utility {
         } else {
             temp = temperature;
         }
-        return context.getString(R.string.format_temperature,temp);
+        return context.getString(R.string.format_temperature, temp);
     }
 
-    static String formatDate(long dateInMillis) {
-        Date date = new Date(dateInMillis);
+    static String formatDate(long dateInMilliseconds) {
+        Date date = new Date(dateInMilliseconds);
         return DateFormat.getDateInstance().format(date);
     }
+
     // Format used for storing dates in the database.  ALso used for converting those strings
     // back into date objects for comparison/processing.
     public static final String DATE_FORMAT = "yyyyMMdd";
@@ -72,10 +72,11 @@ public class Utility {
         // For the next 5 days: "Wednesday" (just the day name)
         // For all days after that: "Mon Jun 8"
 
-        Calendar calendar = Calendar.getInstance();
-        int currentJulianDay = calendar.get(Calendar.DAY_OF_YEAR);
-        calendar.setTimeInMillis(dateInMillis);
-        int julianDay = calendar.get(Calendar.DAY_OF_YEAR);
+        Time time = new Time();
+        time.setToNow();
+        long currentTime = System.currentTimeMillis();
+        int julianDay = Time.getJulianDay(dateInMillis, time.gmtoff);
+        int currentJulianDay = Time.getJulianDay(currentTime, time.gmtoff);
 
         // If the date we're building the String for is today's date, the format
         // is "Today, June 24"
@@ -83,9 +84,9 @@ public class Utility {
             String today = context.getString(R.string.today);
             int formatId = R.string.format_full_friendly_date;
             return String.format(context.getString(
-                    formatId),
+                    formatId,
                     today,
-                    getFormattedMonthDay(context, dateInMillis));
+                    getFormattedMonthDay(context, dateInMillis)));
         } else if ( julianDay < currentJulianDay + 7 ) {
             // If the input date is less than a week in the future, just return the day name.
             return getDayName(context, dateInMillis);
@@ -108,17 +109,17 @@ public class Utility {
         // If the date is today, return the localized version of "Today" instead of the actual
         // day name.
 
-        Calendar calendar = Calendar.getInstance();
-        int currentJulianDay = calendar.get(Calendar.DAY_OF_YEAR);
-        calendar.setTimeInMillis(dateInMillis);
-        int julianDay = calendar.get(Calendar.DAY_OF_YEAR);
+        Time t = new Time();
+        t.setToNow();
+        int julianDay = Time.getJulianDay(dateInMillis, t.gmtoff);
+        int currentJulianDay = Time.getJulianDay(System.currentTimeMillis(), t.gmtoff);
         if (julianDay == currentJulianDay) {
             return context.getString(R.string.today);
         } else if ( julianDay == currentJulianDay +1 ) {
             return context.getString(R.string.tomorrow);
         } else {
-            calendar = Calendar.getInstance();
-            currentJulianDay = calendar.get(Calendar.DAY_OF_YEAR);
+            Time time = new Time();
+            time.setToNow();
             // Otherwise, the format is just the day of the week (e.g "Wednesday".
             SimpleDateFormat dayFormat = new SimpleDateFormat("EEEE");
             return dayFormat.format(dateInMillis);
@@ -133,75 +134,114 @@ public class Utility {
      * @return The day in the form of a string formatted "December 6"
      */
     public static String getFormattedMonthDay(Context context, long dateInMillis ) {
-        Calendar calendar = Calendar.getInstance();
-        calendar.setTimeInMillis(dateInMillis);
+        Time time = new Time();
+        time.setToNow();
         SimpleDateFormat dbDateFormat = new SimpleDateFormat(Utility.DATE_FORMAT);
         SimpleDateFormat monthDayFormat = new SimpleDateFormat("MMMM dd");
         String monthDayString = monthDayFormat.format(dateInMillis);
         return monthDayString;
     }
+
     public static String getFormattedWind(Context context, float windSpeed, float degrees) {
         int windFormat;
         if (Utility.isMetric(context)) {
             windFormat = R.string.format_wind_kmh;
-            windSpeed = windSpeed * 3.6f;
         } else {
             windFormat = R.string.format_wind_mph;
-            windSpeed = 3600.0f * windSpeed / 1609.0f;
+            windSpeed = .621371192237334f * windSpeed;
         }
 
         // From wind direction in degrees, determine compass direction as a string (e.g NW)
         // You know what's fun, writing really long if/else statements with tons of possible
         // conditions.  Seriously, try it!
-        final String[] directionsText = { "N", "NE", "E", "SE", "S", "SW", "W", "NW" };
-        final int DEGREES_TOTAL = 360;
-        final int DIR_TOTAL = 8;
-
-        String direction = directionsText[Math.round(degrees / (DEGREES_TOTAL / DIR_TOTAL)) % DIR_TOTAL];
-
+        String direction = "Unknown";
+        if (degrees >= 337.5 || degrees < 22.5) {
+            direction = "N";
+        } else if (degrees >= 22.5 && degrees < 67.5) {
+            direction = "NE";
+        } else if (degrees >= 67.5 && degrees < 112.5) {
+            direction = "E";
+        } else if (degrees >= 112.5 && degrees < 157.5) {
+            direction = "SE";
+        } else if (degrees >= 157.5 && degrees < 202.5) {
+            direction = "S";
+        } else if (degrees >= 202.5 && degrees < 247.5) {
+            direction = "SW";
+        } else if (degrees >= 247.5 && degrees < 292.5) {
+            direction = "W";
+        } else if (degrees >= 292.5 && degrees < 337.5) {
+            direction = "NW";
+        }
         return String.format(context.getString(windFormat), windSpeed, direction);
     }
 
     /**
-     * Helper method to provide the icon or art resource id according to the weather condition id
-     * returned by the OpenWeatherMap call.
+     * Helper method to provide the icon resource id according to the weather condition id returned
+     * by the OpenWeatherMap call.
      * @param weatherId from OpenWeatherMap API response
-     * @return resource id for the corresponding icon or art, or ic_launcher if no relation is found.
+     * @return resource id for the corresponding icon. -1 if no relation is found.
      */
-    public static int getWeatherConditionImage(int weatherId, boolean isIcon, Context context) {
+    public static int getIconResourceForWeatherCondition(int weatherId) {
         // Based on weather code data found at:
         // http://bugs.openweathermap.org/projects/api/wiki/Weather_Condition_Codes
-        String resourceName = "ic_";
-        if (!isIcon) {
-            resourceName = "art_";
-        }
         if (weatherId >= 200 && weatherId <= 232) {
-            resourceName += "storm";
+            return R.drawable.ic_storm;
         } else if (weatherId >= 300 && weatherId <= 321) {
-            resourceName += "light_rain";
+            return R.drawable.ic_light_rain;
         } else if (weatherId >= 500 && weatherId <= 504) {
-            resourceName += "rain";
+            return R.drawable.ic_rain;
         } else if (weatherId == 511) {
-            resourceName += "snow";
+            return R.drawable.ic_snow;
         } else if (weatherId >= 520 && weatherId <= 531) {
-            resourceName += "rain";
+            return R.drawable.ic_rain;
         } else if (weatherId >= 600 && weatherId <= 622) {
-            resourceName += "snow";
+            return R.drawable.ic_snow;
         } else if (weatherId >= 701 && weatherId <= 761) {
-            resourceName += "fog";
+            return R.drawable.ic_fog;
         } else if (weatherId == 761 || weatherId == 781) {
-            resourceName += "storm";
+            return R.drawable.ic_storm;
         } else if (weatherId == 800) {
-            resourceName += "clear";
+            return R.drawable.ic_clear;
         } else if (weatherId == 801) {
-            resourceName += "light_clouds";
+            return R.drawable.ic_light_clouds;
         } else if (weatherId >= 802 && weatherId <= 804) {
-            resourceName += "clouds";
-        } else {
-            resourceName = "ic_launcher";
+            return R.drawable.ic_cloudy;
         }
-
-        return context.getResources().getIdentifier(resourceName, "drawable", context.getPackageName());
+        return -1;
     }
 
+    /**
+     * Helper method to provide the art resource id according to the weather condition id returned
+     * by the OpenWeatherMap call.
+     * @param weatherId from OpenWeatherMap API response
+     * @return resource id for the corresponding icon. -1 if no relation is found.
+     */
+    public static int getArtResourceForWeatherCondition(int weatherId) {
+        // Based on weather code data found at:
+        // http://bugs.openweathermap.org/projects/api/wiki/Weather_Condition_Codes
+        if (weatherId >= 200 && weatherId <= 232) {
+            return R.drawable.art_storm;
+        } else if (weatherId >= 300 && weatherId <= 321) {
+            return R.drawable.art_light_rain;
+        } else if (weatherId >= 500 && weatherId <= 504) {
+            return R.drawable.art_rain;
+        } else if (weatherId == 511) {
+            return R.drawable.art_snow;
+        } else if (weatherId >= 520 && weatherId <= 531) {
+            return R.drawable.art_rain;
+        } else if (weatherId >= 600 && weatherId <= 622) {
+            return R.drawable.art_snow;
+        } else if (weatherId >= 701 && weatherId <= 761) {
+            return R.drawable.art_fog;
+        } else if (weatherId == 761 || weatherId == 781) {
+            return R.drawable.art_storm;
+        } else if (weatherId == 800) {
+            return R.drawable.art_clear;
+        } else if (weatherId == 801) {
+            return R.drawable.art_light_clouds;
+        } else if (weatherId >= 802 && weatherId <= 804) {
+            return R.drawable.art_clouds;
+        }
+        return -1;
+    }
 }

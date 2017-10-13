@@ -21,8 +21,6 @@ import android.net.Uri;
 import android.provider.BaseColumns;
 import android.text.format.Time;
 
-import static com.example.android.sunshine.app.data.WeatherContract.LocationEntry.COLUMN_LOCATION_SETTING;
-
 /**
  * Defines table and column names for the weather database.
  */
@@ -133,7 +131,7 @@ public class WeatherContract {
         }
 
         /*
-            Student: Fill in this buildWeatherLocation function
+            Student: This is the buildWeatherLocation function you filled in.
          */
         public static Uri buildWeatherLocation(String locationSetting) {
             return CONTENT_URI.buildUpon().appendPath(locationSetting).build();
