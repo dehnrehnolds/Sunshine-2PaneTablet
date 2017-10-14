@@ -18,6 +18,7 @@ package com.example.android.sunshine.app;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
 import android.support.v4.app.Fragment;
 import android.support.v4.app.LoaderManager;
 import android.support.v4.content.CursorLoader;
@@ -72,6 +73,11 @@ public class ForecastFragment extends Fragment implements LoaderManager.LoaderCa
     static final int COL_COORD_LONG = 8;
 
     private ForecastAdapter mForecastAdapter;
+    public boolean mUseTodayLayout;
+    private ListView mListView;
+    private int mPosition = ListView.INVALID_POSITION;
+
+    private static final String SELECTED_KEY = "selected_position";
 
     /**
      * A callback interface that all activities containing this fragment must
@@ -118,15 +124,18 @@ public class ForecastFragment extends Fragment implements LoaderManager.LoaderCa
                              Bundle savedInstanceState) {
         // The CursorAdapter will take data from our cursor and populate the ListView.
         mForecastAdapter = new ForecastAdapter(getActivity(), null, 0);
+        mForecastAdapter.setUseTodayLayout(mUseTodayLayout);
 
         View rootView = inflater.inflate(R.layout.fragment_main, container, false);
 
         // Get a reference to the ListView, and attach this adapter to it.
-        ListView listView = (ListView) rootView.findViewById(R.id.listview_forecast);
-        listView.setAdapter(mForecastAdapter);
+        mListView = (ListView) rootView.findViewById(R.id.listview_forecast);
+        mListView.setAdapter(mForecastAdapter);
+        //preselect first item of list-view
+
 
         // We'll call our MainActivity
-        listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+        mListView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
 
             @Override
             public void onItemClick(AdapterView<?> adapterView, View view, int position, long l) {
@@ -140,10 +149,29 @@ public class ForecastFragment extends Fragment implements LoaderManager.LoaderCa
                                     locationSetting, cursor.getLong(COL_WEATHER_DATE)
                             ));
                 }
+                mPosition = position;
             }
         });
+
+        if (savedInstanceState != null && savedInstanceState.containsKey(SELECTED_KEY)) {
+        // The listview probably hasn't even been populated yet.  Actually perform the
+        // swapout in onLoadFinished.
+         mPosition = savedInstanceState.getInt(SELECTED_KEY);
+         }
+
         return rootView;
     }
+
+    @Override
+    public void onSaveInstanceState(Bundle outState) {
+    // When tablets rotate, the currently selected list item needs to be saved.
+     // When no item is selected, mPosition will be set to Listview.INVALID_POSITION,
+     // so check for that before storing.
+     if (mPosition != ListView.INVALID_POSITION) {
+     outState.putInt(SELECTED_KEY, mPosition);
+      }
+      super.onSaveInstanceState(outState);
+      }
 
     @Override
     public void onActivityCreated(Bundle savedInstanceState) {
@@ -180,9 +208,30 @@ public class ForecastFragment extends Fragment implements LoaderManager.LoaderCa
                 sortOrder);
     }
 
+    public void setUseTodayLayout(boolean useTodayLayout) {
+        mUseTodayLayout = useTodayLayout;
+        if (mForecastAdapter != null) mForecastAdapter.setUseTodayLayout(useTodayLayout);
+    }
+
     @Override
     public void onLoadFinished(Loader<Cursor> cursorLoader, Cursor cursor) {
         mForecastAdapter.swapCursor(cursor);
+        if (mPosition != ListView.INVALID_POSITION) {
+            // If we don't need to restart the loader, and there's a desired position to restore
+            // to, do so now.
+            mListView.smoothScrollToPosition(mPosition);
+        }
+        //mUseTodayLayout == !mTwoPane
+        else if (!mUseTodayLayout) {
+            {
+                new Handler().post(new Runnable() {
+                    @Override
+                    public void run() {
+                        mListView.performItemClick(mListView, 0, mListView.getAdapter().getItemId(0));
+                    }
+                });
+            }
+        }
     }
 
     @Override

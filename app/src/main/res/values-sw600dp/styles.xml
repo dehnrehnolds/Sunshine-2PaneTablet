@@ -1,0 +1,8 @@
+<resources>
+
+    <!-- Style for forecast listview -->
+    <style name="ForecastListStyle">
+        <item name="android:choiceMode">singleChoice</item>
+    </style>
+
+</resources>
